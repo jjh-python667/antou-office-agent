@@ -1,0 +1,13 @@
+.venv/
+vendor/
+__pycache__/
+workspace/
+*.log
+.antou/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+inputs/
+outputs/
+.env
+.env.*
