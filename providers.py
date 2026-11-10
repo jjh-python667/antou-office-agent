@@ -116,13 +116,18 @@ def upstream_detail(error, api_key=""):
 
 
 def provider_error(settings, error):
-    reasons = {400: "模型名或请求参数不受支持", 401: "API Key 无效或与接口地域不匹配", 402: "余额不足", 403: "接口访问受限", 404: "接口地址或模型不存在", 429: "请求过于频繁"}
-    if 300 <= error.code < 400:
-        return RuntimeError(settings['name'] + '：接口发生重定向，请填写最终 API 地址')
-    detail = upstream_detail(error, settings['api_key'])
-    lowered = detail.lower()
-    reason = '超出模型上下文长度，请新建会话或减少资料' if error.code in (400, 413) and 'context' in lowered and ('length' in lowered or 'token' in lowered) else reasons.get(error.code, 'HTTP ' + str(error.code))
-    return RuntimeError(settings['name'] + '：' + reason + ('（服务商返回：' + detail + '）' if detail else ''))
+    # The raised RuntimeError keeps this response as __context__. Close it so
+    # urllib's half-closed client socket does not leak until process shutdown.
+    try:
+        reasons = {400: "模型名或请求参数不受支持", 401: "API Key 无效或与接口地域不匹配", 402: "余额不足", 403: "接口访问受限", 404: "接口地址或模型不存在", 429: "请求过于频繁"}
+        if 300 <= error.code < 400:
+            return RuntimeError(settings['name'] + '：接口发生重定向，请填写最终 API 地址')
+        detail = upstream_detail(error, settings['api_key'])
+        lowered = detail.lower()
+        reason = '超出模型上下文长度，请新建会话或减少资料' if error.code in (400, 413) and 'context' in lowered and ('length' in lowered or 'token' in lowered) else reasons.get(error.code, 'HTTP ' + str(error.code))
+        return RuntimeError(settings['name'] + '：' + reason + ('（服务商返回：' + detail + '）' if detail else ''))
+    finally:
+        error.close()
 
 
 def request_json(settings, suffix, payload=None):
