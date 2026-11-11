@@ -20,6 +20,6 @@ Install, run, test, HTTP, and limits are in the [README](../README.md). The note
 
 `app.py` is the loopback HTTP server and the agent loop. `providers.py` holds the seven presets and the stream parser. `context_budget.py` estimates context. `local_state.py` stores successful sessions and task history in SQLite under the workspace. The page is `index.html` and `assets/`.
 
-自动化测试是 `python -m unittest`。GitHub Actions 在 Python 3.11 上为 Ubuntu 和 Windows 运行这条命令。CHANGES-v3.2.md 里还记录了作者在 Windows / Python 3.9 上的一次本地运行，以及用浏览器检查页面的过程；那些句子是当时的记录，不是这份说明重新测得的结果。
+自动化测试是 `python -m unittest`。GitHub Actions 在 Python 3.11 上为 Ubuntu 和 Windows 运行这条命令。`CHANGES-v3.2.md` 记录了作者在 Windows / Python 3.9 上的一次本地运行，以及用浏览器检查页面的过程。
 
-Automated tests are `python -m unittest`. GitHub Actions runs that command on Python 3.11 for Ubuntu and Windows. CHANGES-v3.2.md also records the author's earlier local run on Windows / Python 3.9 and a browser pass. Those sentences are that note, not a result re-measured for this page.
+Automated tests are `python -m unittest`. GitHub Actions runs that command on Python 3.11 for Ubuntu and Windows. `CHANGES-v3.2.md` records the author's earlier local run on Windows / Python 3.9 and a browser pass.

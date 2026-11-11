@@ -12,7 +12,7 @@ ANTOU is a local office assistant. A Python process on your machine serves the p
 
 - **两种模式。** 角色助手保留当前会话，不提供文件工具。执行 Agent 把模型返回的工具调用交给 `office_tools`，再把真实结果交回模型。每次任务最多 10 轮，每轮最多 8 次工具调用。一次只跑一个任务。
 - **五个工具：** `list_files`、`read_file`、`summarize_table`、`create_spreadsheet`、`write_document`。可读 txt、md、csv、xlsx、docx。上传单文件不超过 20MB。表格上限是 50000 行、200 列。
-- **金额汇总在程序里用 `Decimal` 计算。** 重复行保留并计入，缺失或非数字金额不计入，缺少分组的有效金额进入空分组。超过 Excel 15 位有效数字的金额按文本保存。没有缓存值的公式标为「公式未计算」，不计入合计。生成的 xlsx 会重新打开核对行数；生成的 docx 会重新打开核对段落。Word 校验不包含页面排版。
+- **金额合计用 Python 的 `Decimal` 计算，避免浮点舍入。** 重复行保留并计入，缺失或非数字金额不计入，缺少分组的有效金额进入空分组。超过 Excel 15 位有效数字的金额按文本保存。没有缓存值的公式标为「公式未计算」，不计入合计。生成的 xlsx 会重新打开核对行数；生成的 docx 会重新打开核对段落。Word 校验不包含页面排版。
 - **七个 Chat Completions 预设：** DeepSeek、OpenAI、通义千问（百炼兼容地址）、Kimi、硅基流动、Ollama、自定义 Base URL。请求打到 `/chat/completions` 和 `/models`。DeepSeek 发送 `thinking.type`，通义千问发送顶层 `enable_thinking`，OpenAI 使用 `max_completion_tokens`，其余预设使用 `max_tokens`。思考开关只对 DeepSeek 和通义千问写入这些字段。
 - **正文可以流式显示。** 页面默认打开流式；接口里省略 `stream` 时按非流式处理。若上游直接返回 JSON，而不是 SSE，服务会整段交给页面。`reasoning_content` 留在模型协议消息里，不作为正文发给页面。工具参数会先拼完整再执行。
 - **上下文预算是保守估算。** 默认最大输出 6000、上下文 32000，可在设置里改。估算方法是 UTF-8 字节长度加上固定余量，并计入工具 schema。超预算时只删掉最早的完整用户轮次。当前这一轮本身放不下时，调用模型之前就报错。
@@ -20,23 +20,15 @@ ANTOU is a local office assistant. A Python process on your machine serves the p
 - **页面上的本地演示不调用模型。** `app.py` 里的 `demo()` 写入一份固定 CSV（6 行数据：一笔金额为空，一笔与前面重复），再调用读取、汇总和写 Word。完成提示里的合计是 780。
 - **可以停止任务。** 停止、刷新或关掉页面后，不再开始下一步。已经发出的那一次模型请求仍可能被服务商计费。正在执行的单个工具会跑完，然后才停止后续步骤。
 
-Two modes. Role chat keeps the current conversation and has no file tools. The agent hands model tool calls to `office_tools` and sends the real result back. A task allows at most 10 rounds and 8 tool calls per round. Only one task runs at a time.
-
-Five tools: `list_files`, `read_file`, `summarize_table`, `create_spreadsheet`, `write_document`. They accept txt, md, csv, xlsx, and docx. One upload is at most 20MB. Tables stop at 50,000 rows and 200 columns.
-
-Sums use `Decimal` in process. Duplicate rows are kept and counted. Missing or non-numeric amounts are left out. Valid amounts with a missing group land in an empty group. Amounts with more than 15 significant digits are stored as text. Formulas without a cached value are labeled and excluded. A new xlsx is reopened to check the row count. A new docx is reopened to check paragraphs. That check does not render a page in Word.
-
-Seven Chat Completions presets: DeepSeek, OpenAI, Qwen (DashScope compatible-mode URL), Kimi, SiliconFlow, Ollama, and a custom base URL. Calls go to `/chat/completions` and `/models`. DeepSeek gets `thinking.type`, Qwen gets top-level `enable_thinking`, OpenAI uses `max_completion_tokens`, and the other presets use `max_tokens`. The thinking field is sent only for DeepSeek and Qwen.
-
-Assistant text can stream. The page turns streaming on by default. Omitting `stream` on the HTTP API selects a single response. A JSON body, instead of server-sent events, is passed through as the whole reply. `reasoning_content` stays in the protocol message and is not shown as the answer. Tool arguments are assembled before a tool runs.
-
-The context budget is a conservative estimate. Defaults are 6,000 output tokens and a 32,000 context window, both editable in settings. The estimate is UTF-8 byte length plus a fixed margin, including the tool schema. When the budget is exceeded, only the oldest complete user turn is dropped. If the current turn itself does not fit, the server reports an error before calling the model.
-
-Successful sessions and tasks are stored in local SQLite at `workspace/.antou/state.sqlite3`. History can show a task, download its files, restore a successful session, or put the original text back in the composer. API keys and `Authorization` headers are not stored. Cancelled, failed, and incomplete streams are not saved as successful sessions. On the next process start, a task still marked `running` is marked interrupted.
-
-The in-page demo does not call a model. `demo()` in `app.py` writes a fixed CSV (six data rows: one blank amount, one duplicate), then reads it, summarizes it, and writes a Word file. The completion message states a total of 780.
-
-A running task can be stopped. After stop, refresh, or closing the page, no further step starts. The provider may still charge for the request already sent. The tool that is already running finishes, and later steps are skipped.
+- **Two modes.** Role chat keeps the current conversation and has no file tools. The agent hands model tool calls to `office_tools` and sends the real result back. A task allows at most 10 rounds and 8 tool calls per round. Only one task runs at a time.
+- **Five tools:** `list_files`, `read_file`, `summarize_table`, `create_spreadsheet`, and `write_document`. They accept txt, md, csv, xlsx, and docx. One upload is at most 20MB. Tables stop at 50,000 rows and 200 columns.
+- **Amount totals.** Totals are computed with Python's `Decimal` to avoid float rounding. Duplicate rows are kept and counted. Missing or non-numeric amounts are left out. Valid amounts with a missing group land in an empty group. Amounts with more than 15 significant digits are stored as text. Formulas without a cached value are labeled and excluded. A new xlsx is reopened to check the row count. A new docx is reopened to check paragraphs. Word verification does not include page layout.
+- **Seven Chat Completions presets:** DeepSeek, OpenAI, Qwen (DashScope compatible-mode URL), Kimi, SiliconFlow, Ollama, and a custom base URL. Calls go to `/chat/completions` and `/models`. DeepSeek gets `thinking.type`, Qwen gets top-level `enable_thinking`, OpenAI uses `max_completion_tokens`, and the other presets use `max_tokens`. The thinking field is sent only for DeepSeek and Qwen.
+- **Streaming text.** The page turns streaming on by default. Omitting `stream` on the HTTP API selects a single response. A JSON body, instead of server-sent events, is passed through as the whole reply. `reasoning_content` stays in the protocol message and is not shown as the answer. Tool arguments are assembled before a tool runs.
+- **Context budget.** The budget is a conservative estimate. Defaults are 6,000 output tokens and a 32,000 context window, both editable in settings. The estimate is UTF-8 byte length plus a fixed margin, including the tool schema. When the budget is exceeded, only the oldest complete user turn is dropped. If the current turn itself does not fit, the server reports an error before calling the model.
+- **Local SQLite.** Successful sessions and tasks are stored at `workspace/.antou/state.sqlite3`. History can show a task, download its files, restore a successful session, or put the original text back in the composer. API keys and `Authorization` headers are not stored. Cancelled, failed, and incomplete streams are not saved as successful sessions. On the next process start, a task still marked `running` is marked interrupted.
+- **Local demo.** The in-page demo does not call a model. `demo()` in `app.py` writes a fixed CSV (six data rows: one blank amount, one duplicate), then reads it, summarizes it, and writes a Word file. The completion message states a total of 780.
+- **Stop a task.** After stop, refresh, or closing the page, no further step starts. The provider may still charge for the request already sent. The tool that is already running finishes, and later steps are skipped.
 
 ## 当前边界 / Present limits
 
@@ -119,7 +111,7 @@ Ollama 需要你自己安装、启动，并拉取模型。自定义接口要兼�
 
 Ollama has to be installed, running, and holding a model you choose. A custom endpoint needs to speak Chat Completions. "Load models" and "Test chat" both contact the URL you entered. A chat test can spend credit. A model list does not mean every id supports tools.
 
-接口说明（预设作者采用的公开文档，不是本仓库的测试报告）：
+接口说明：
 
 - DeepSeek: <https://api-docs.deepseek.com/guides/tool_calls/>
 - OpenAI: <https://developers.openai.com/api/reference/chat-completions/overview>
@@ -191,9 +183,9 @@ LICENSE                项目代码的 MIT 许可
 .github/workflows/tests.yml
 ```
 
-`BASELINE-v3.1.json` 记录的压缩包不在本仓库里，这里没有重新计算那个包的哈希。v3.1 / v3.2 的过程说明以那两份 CHANGES 文件为准。
+v3.1 / v3.2 的过程说明在 `CHANGES-v3.1.md` 和 `CHANGES-v3.2.md`。
 
-The zip named in `BASELINE-v3.1.json` is not in this repository, so this tree does not recompute that archive hash. The v3.1 and v3.2 notes live in the two CHANGES files.
+The v3.1 and v3.2 notes are in `CHANGES-v3.1.md` and `CHANGES-v3.2.md`.
 
 运行产生的 `workspace/`、`.venv/`、`__pycache__/`、日志、SQLite 和 `.env` 已写在 `.gitignore` 里。
 
