@@ -187,7 +187,6 @@ CHANGES-v3.1.md        v3.1 当时的修改记录
 CHANGES-v3.2.md        v3.2 当时的修改记录
 BASELINE-v3.1.json     记录中的 v3.1 源码包 SHA-256 与文件哈希
 CHANGELOG.md           本仓库此后的变更
-LICENSE                项目代码的 MIT 许可
 .github/workflows/tests.yml
 ```
 
@@ -234,12 +233,8 @@ Write requests are JSON and include `X-Office-Token`. The page template's `__TOK
 
 `max_output_tokens` is an integer from 256 to 16000. `context_window` is an integer from 4096 to 1000000 and must exceed the output limit by more than 512. `text` is at most 20,000 characters. `role_prompt` is stored up to 6,000 characters. `attachments` allows at most 10 paths, and only in agent mode. A POST body above 29MB is rejected.
 
-## 许可 / License
+## 第三方文件 / Third-party files
 
-本仓库的项目代码采用 [MIT License](LICENSE)，版权人为 工匠（jjh-python667），2026。
+`assets/gsap.min.js` 与 `assets/ScrollTrigger.min.js` 是 GSAP 3.15.1，随这个仓库附带，适用 GreenSock Standard License。版权声明保留在文件头，说明见 [assets/THIRD-PARTY.txt](assets/THIRD-PARTY.txt)。SVG 插画是本项目的文件。
 
-`assets/gsap.min.js` 与 `assets/ScrollTrigger.min.js` 是 GSAP 3.15.1，许可证是 GreenSock 的 Standard License，不在这份 MIT 之内。版权声明保留在文件头，说明见 [assets/THIRD-PARTY.txt](assets/THIRD-PARTY.txt)。SVG 插画是本项目的文件。
-
-Project code in this repository is under the [MIT License](LICENSE), copyright 工匠 (jjh-python667), 2026.
-
-`assets/gsap.min.js` and `assets/ScrollTrigger.min.js` are GSAP 3.15.1 under GreenSock's Standard License, which is separate from that MIT grant. The file headers keep the upstream notice. See [assets/THIRD-PARTY.txt](assets/THIRD-PARTY.txt). The SVG illustrations are files from this project.
+`assets/gsap.min.js` and `assets/ScrollTrigger.min.js` are GSAP 3.15.1 and ship with this repository under GreenSock's Standard License. The file headers keep the upstream notice. See [assets/THIRD-PARTY.txt](assets/THIRD-PARTY.txt). The SVG illustrations are files from this project.
