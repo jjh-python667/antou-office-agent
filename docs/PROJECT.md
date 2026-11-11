@@ -1,31 +1,25 @@
-# 案头 ANTOU · v3.2
+# 案头 ANTOU
 
-案头是一个本地办公助手原型，包含用于讨论与写作的角色助手，以及可以连续调用文件工具的执行 Agent。目标是把“给出建议”进一步变成可检查的文件交付。
+案头是一个本地办公助手：浏览器工作台连到本机 Python 服务，服务再按页面上的配置调用 Chat Completions。角色模式讨论和写作；执行模式把模型的工具调用交给 `office_tools`，用真实文件结果继续，直到写出 Excel 或 Word，或要求补充材料。
 
-## 一条真实的演示流程
+ANTOU is a local office assistant. The browser talks to a Python server on the same machine, and that server calls the Chat Completions endpoint configured in the page. Role mode discusses and drafts. Agent mode gives tool calls to `office_tools` and continues from the real file results until it writes Excel or Word, or asks for something it does not have.
 
-读取本机演示费用表 → 检查缺失和重复 → 按部门与月份汇总 → 生成 Excel → 生成 Word 说明。演示金额合计为 780，重复行保留计入并标记，缺失金额不计入。
+完整的安装、运行、测试、接口和边界见 [README](../README.md)。v3.1 与 v3.2 当时的修改记录在 [CHANGES-v3.1.md](../CHANGES-v3.1.md) 和 [CHANGES-v3.2.md](../CHANGES-v3.2.md)。此后的仓库变更在 [CHANGELOG.md](../CHANGELOG.md)。
 
-这条演示是固定本地流程，不调用外部模型。它验证文件工具与交付链路；接入模型后，执行步骤由模型的工具调用结果决定。
+Install, run, test, HTTP, and limits are in the [README](../README.md). The notes written with v3.1 and v3.2 are [CHANGES-v3.1.md](../CHANGES-v3.1.md) and [CHANGES-v3.2.md](../CHANGES-v3.2.md). Later repository changes are in [CHANGELOG.md](../CHANGELOG.md).
 
-## 当前实现
+## 演示 / Demo
 
-- 7 种模型接入方式：DeepSeek、OpenAI、Qwen、Kimi、硅基流动、Ollama 和自定义兼容接口。适配参数不代表每个模型都已实测。
-- 角色与执行模式分离，支持正文流式显示、任务取消、上下文预算与失败反馈。
-- 原始资料保留，使用 Decimal 统计金额，处理 Excel 数值精度和未计算公式。
-- 成功会话与任务历史保存到本机 SQLite；取消或失败的整轮不提交成功会话。
-- 创意机构风格前端，GSAP 开场和滚动动效；提供专注模式、手机布局与减少动态效果适配。
+页面上的「运行费用汇总演示」走 `app.py` 的 `demo()`：写入一份固定 CSV，读取、按部门和月份汇总、生成 Excel 和 Word。这条路径不调用外部模型。完成文案中的合计是 780。接入模型之后，步骤由模型的工具调用决定，演示数字不能当成你的文件的结果。
 
-## 实现方式
+"运行费用汇总演示" calls `demo()` in `app.py`: it writes a fixed CSV, reads it, groups by department and month, and writes Excel and Word. That path does not call an external model. The completion text states a total of 780. After a model is connected, steps follow that model's tool calls. The demo total is not a result for your own files.
 
-浏览器工作台通过本机 Python HTTP 服务调用模型；模型返回工具请求后，服务校验参数并执行 office_tools，再把真实工具结果交回模型。context_budget 管理上下文，local_state 负责会话与任务记录。所有服务仅监听本机回环地址。
+## 实现 / How it is put together
 
-项目在 AI 助手辅助下完成开发、审查与测试，保留版本改动说明和验证边界。开发过程包含外部模型审查后的 v3.1 P0 修复，v3.2 以该版本为基线继续推进 P1。
+`app.py` 提供只绑定回环地址的 HTTP 服务和 Agent 循环。`providers.py` 负责七个预设和流式拼接。`context_budget.py` 做保守的上下文估算。`local_state.py` 把成功会话和任务历史放进工作目录里的 SQLite。页面在 `index.html` 和 `assets/`。
 
-## 验证与边界
+`app.py` is the loopback HTTP server and the agent loop. `providers.py` holds the seven presets and the stream parser. `context_budget.py` estimates context. `local_state.py` stores successful sessions and task history in SQLite under the workspace. The page is `index.html` and `assets/`.
 
-47 项本地测试已在 Windows / Python 3.9 上通过，包括本机假上游、流式与工具调用、取消、环境变量 Key 作用域、Excel 精度、会话落盘和应用进程重启续接。
+自动化测试是 `python -m unittest`。GitHub Actions 在 Python 3.11 上为 Ubuntu 和 Windows 运行这条命令。CHANGES-v3.2.md 里还记录了作者在 Windows / Python 3.9 上的一次本地运行，以及用浏览器检查页面的过程；那些句子是当时的记录，不是这份说明重新测得的结果。
 
-截图使用真实本地界面和演示数据；没有使用真实云端 Key，没有伪装在线云端演示。真实服务商联调和 Microsoft Office 应用内版式验收尚未进行。单个工具执行中不能强制中断，取消前已发出的模型请求仍可能计费。当前不是多用户公网办公服务。
-
-详见 [README](../README.md) 和 [v3.2 改动说明](../CHANGES-v3.2.md)。
+Automated tests are `python -m unittest`. GitHub Actions runs that command on Python 3.11 for Ubuntu and Windows. CHANGES-v3.2.md also records the author's earlier local run on Windows / Python 3.9 and a browser pass. Those sentences are that note, not a result re-measured for this page.

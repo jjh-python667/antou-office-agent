@@ -10,7 +10,7 @@ if errorlevel 1 (
   ".venv\Scripts\python.exe" -m pip install -r requirements.txt
   if errorlevel 1 goto failed
 )
-".venv\Scripts\python.exe" app.py
+".venv\Scripts\python.exe" app.py %*
 if errorlevel 1 goto failed
 exit /b 0
 :failed

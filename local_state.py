@@ -9,6 +9,16 @@ def encode(value):
     return json.dumps(value, ensure_ascii=False, default=str)
 
 
+class ClosingConnection(sqlite3.Connection):
+    """The stdlib context manager commits or rolls back and leaves the connection open."""
+
+    def __exit__(self, *args):
+        try:
+            return super().__exit__(*args)
+        finally:
+            self.close()
+
+
 class LocalState:
     def __init__(self, path):
         self.path = Path(path)
@@ -25,13 +35,7 @@ class LocalState:
 
     def connect(self):
         # Context-managed connection closes deterministically, including on Windows.
-        class Connection(sqlite3.Connection):
-            def __exit__(self, *args):
-                try:
-                    return super().__exit__(*args)
-                finally:
-                    self.close()
-        db = sqlite3.connect(str(self.path), timeout=5, factory=Connection)
+        db = sqlite3.connect(str(self.path), timeout=5, factory=ClosingConnection)
         db.row_factory = sqlite3.Row
         return db
 
