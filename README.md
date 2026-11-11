@@ -187,6 +187,7 @@ CHANGES-v3.1.md        v3.1 当时的修改记录
 CHANGES-v3.2.md        v3.2 当时的修改记录
 BASELINE-v3.1.json     记录中的 v3.1 源码包 SHA-256 与文件哈希
 CHANGELOG.md           本仓库此后的变更
+LICENSE                项目代码的 MIT 许可
 .github/workflows/tests.yml
 ```
 
@@ -232,6 +233,12 @@ These three images were captured on 2026-11-11 from the page served by this repo
 Write requests are JSON and include `X-Office-Token`. The page template's `__TOKEN__` is replaced with a token created when the process starts. Keep keys out of URLs.
 
 `max_output_tokens` is an integer from 256 to 16000. `context_window` is an integer from 4096 to 1000000 and must exceed the output limit by more than 512. `text` is at most 20,000 characters. `role_prompt` is stored up to 6,000 characters. `attachments` allows at most 10 paths, and only in agent mode. A POST body above 29MB is rejected.
+
+## 许可 / License
+
+本仓库的项目代码采用 [MIT License](LICENSE)，版权人为 工匠（jjh-python667），2026。
+
+Project code in this repository is under the [MIT License](LICENSE), copyright 工匠 (jjh-python667), 2026.
 
 ## 第三方文件 / Third-party files
 
