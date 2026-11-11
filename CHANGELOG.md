@@ -5,8 +5,6 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 `GET /api/health` still reports version `3.2`. The notes written with the 2026-11-09 v3.1 and v3.2 work remain in `CHANGES-v3.1.md` and `CHANGES-v3.2.md`.
 
-## [Unreleased]
-
 ## 2026-11-11
 
 Repository polish on the published 3.2 tree. `/api/health` still reports version `3.2`. This entry does not bump that version. The only application-behavior change carried into this branch from pull request #1 is the socket close below.
