@@ -1,71 +1,79 @@
-# ANTOU® 案头 / Make work flow.
+# ANTOU 案头
 
 [![Tests](https://github.com/jjh-python667/antou-office-agent/actions/workflows/tests.yml/badge.svg)](https://github.com/jjh-python667/antou-office-agent/actions/workflows/tests.yml)
 
-**一个能讨论思路，也能连续调用工具交付 Excel / Word 的本地办公助手。**
+案头是一个在你自己电脑上运行的办公助手。本机 Python 进程提供页面，并按你填写的地址调用 Chat Completions 接口。角色助手用来讨论和写作；执行 Agent 可以连续调用文件工具，读取资料并生成 Excel 与 Word。服务只监听 `127.0.0.1`。仓库里没有公网后端，单元测试也不会请求收费模型。
 
-[项目介绍](docs/PROJECT.md) · [v3.2 改动](CHANGES-v3.2.md) · [作者作品集](https://jjh-python667.github.io/)
+ANTOU is a local office assistant. A Python process on your machine serves the page and calls a Chat Completions endpoint you configure. Role mode is for discussion and writing. Agent mode can call file tools, read the files you select, and write Excel and Word. The server binds to `127.0.0.1` only. This repository has no hosted backend, and the unit tests do not call a paid model.
 
-![案头首页](docs/screenshots/home.png)
+[项目说明 / Project note](docs/PROJECT.md) · [v3.2 记录](CHANGES-v3.2.md) · [作者页面](https://jjh-python667.github.io/)
 
-## 快速开始
+## 它做什么 / What it does
 
-安装 Python 3.9+，下载或克隆项目，Windows 双击 `start.cmd`。先点“无需 Key 的演示”，确认本地文件处理可用；需要模型能力时，在页面填写自己的 API Key。
+- **两种模式。** 角色助手保留当前会话，不提供文件工具。执行 Agent 把模型返回的工具调用交给 `office_tools`，再把真实结果交回模型。每次任务最多 10 轮，每轮最多 8 次工具调用。一次只跑一个任务。
+- **五个工具：** `list_files`、`read_file`、`summarize_table`、`create_spreadsheet`、`write_document`。可读 txt、md、csv、xlsx、docx。上传单文件不超过 20MB。表格上限是 50000 行、200 列。
+- **金额合计用 Python 的 `Decimal` 计算，避免浮点舍入。** 重复行保留并计入，缺失或非数字金额不计入，缺少分组的有效金额进入空分组。超过 Excel 15 位有效数字的金额按文本保存。没有缓存值的公式标为「公式未计算」，不计入合计。生成的 xlsx 会重新打开核对行数；生成的 docx 会重新打开核对段落。Word 校验不包含页面排版。
+- **七个 Chat Completions 预设：** DeepSeek、OpenAI、通义千问（百炼兼容地址）、Kimi、硅基流动、Ollama、自定义 Base URL。请求打到 `/chat/completions` 和 `/models`。DeepSeek 发送 `thinking.type`，通义千问发送顶层 `enable_thinking`，OpenAI 使用 `max_completion_tokens`，其余预设使用 `max_tokens`。思考开关只对 DeepSeek 和通义千问写入这些字段。
+- **正文可以流式显示。** 页面默认打开流式；接口里省略 `stream` 时按非流式处理。若上游直接返回 JSON，而不是 SSE，服务会整段交给页面。`reasoning_content` 留在模型协议消息里，不作为正文发给页面。工具参数会先拼完整再执行。
+- **上下文预算是保守估算。** 默认最大输出 6000、上下文 32000，可在设置里改。估算方法是 UTF-8 字节长度加上固定余量，并计入工具 schema。超预算时只删掉最早的完整用户轮次。当前这一轮本身放不下时，调用模型之前就报错。
+- **成功的会话和任务写在本机 SQLite：** `workspace/.antou/state.sqlite3`。可以在「历史」里查看、下载成品、恢复成功会话，或把原任务放回输入框。API Key 和 `Authorization` 头不写入这个库。取消、失败和不完整的流不会记成成功会话。进程再次启动时，上次仍为 `running` 的任务会标成中断。
+- **页面上的本地演示不调用模型。** `app.py` 里的 `demo()` 写入一份固定 CSV（6 行数据：一笔金额为空，一笔与前面重复），再调用读取、汇总和写 Word。完成提示里的合计是 780。
+- **可以停止任务。** 停止、刷新或关掉页面后，不再开始下一步。已经发出的那一次模型请求仍可能被服务商计费。正在执行的单个工具会跑完，然后才停止后续步骤。
+
+- **Two modes.** Role chat keeps the current conversation and has no file tools. The agent hands model tool calls to `office_tools` and sends the real result back. A task allows at most 10 rounds and 8 tool calls per round. Only one task runs at a time.
+- **Five tools:** `list_files`, `read_file`, `summarize_table`, `create_spreadsheet`, and `write_document`. They accept txt, md, csv, xlsx, and docx. One upload is at most 20MB. Tables stop at 50,000 rows and 200 columns.
+- **Amount totals.** Totals are computed with Python's `Decimal` to avoid float rounding. Duplicate rows are kept and counted. Missing or non-numeric amounts are left out. Valid amounts with a missing group land in an empty group. Amounts with more than 15 significant digits are stored as text. Formulas without a cached value are labeled and excluded. A new xlsx is reopened to check the row count. A new docx is reopened to check paragraphs. Word verification does not include page layout.
+- **Seven Chat Completions presets:** DeepSeek, OpenAI, Qwen (DashScope compatible-mode URL), Kimi, SiliconFlow, Ollama, and a custom base URL. Calls go to `/chat/completions` and `/models`. DeepSeek gets `thinking.type`, Qwen gets top-level `enable_thinking`, OpenAI uses `max_completion_tokens`, and the other presets use `max_tokens`. The thinking field is sent only for DeepSeek and Qwen.
+- **Streaming text.** The page turns streaming on by default. Omitting `stream` on the HTTP API selects a single response. A JSON body, instead of server-sent events, is passed through as the whole reply. `reasoning_content` stays in the protocol message and is not shown as the answer. Tool arguments are assembled before a tool runs.
+- **Context budget.** The budget is a conservative estimate. Defaults are 6,000 output tokens and a 32,000 context window, both editable in settings. The estimate is UTF-8 byte length plus a fixed margin, including the tool schema. When the budget is exceeded, only the oldest complete user turn is dropped. If the current turn itself does not fit, the server reports an error before calling the model.
+- **Local SQLite.** Successful sessions and tasks are stored at `workspace/.antou/state.sqlite3`. History can show a task, download its files, restore a successful session, or put the original text back in the composer. API keys and `Authorization` headers are not stored. Cancelled, failed, and incomplete streams are not saved as successful sessions. On the next process start, a task still marked `running` is marked interrupted.
+- **Local demo.** The in-page demo does not call a model. `demo()` in `app.py` writes a fixed CSV (six data rows: one blank amount, one duplicate), then reads it, summarizes it, and writes a Word file. The completion message states a total of 780.
+- **Stop a task.** After stop, refresh, or closing the page, no further step starts. The provider may still charge for the request already sent. The tool that is already running finishes, and later steps are skipped.
+
+## 当前边界 / Present limits
+
+这些是当前代码的边界，避免把预设地址理解成已经用真实账号联调过。
+
+- 监听地址是 `127.0.0.1`。写接口还要校验 `Host`、`X-Office-Token` 和来源 `Origin`。`GET /download` 只检查 `Host`，并且只能下载工作目录 `inputs/` 与 `outputs/` 里的文件。
+- 远程 Base URL 必须是 HTTPS。HTTP 只允许 `127.0.0.1`、`localhost` 和 `::1`。地址里不能带用户名、密码、查询参数或片段。发生重定向时不跟随，也不把密钥转到另一个主机；需要改成最终地址。
+- 环境变量里的 Key 只发给该预设的官方协议、主机和端口。自定义接口不读取环境变量 Key。改过 Base URL 之后，要在页面里填写这个地址自己的 Key。
+- 浏览器 `localStorage` 键 `antou.preferences.v3` 保存服务商、Base URL、模型名、思考开关、输出上限、上下文预算和是否流式。API Key、角色要求和对话正文不在里面。`sessionStorage` 键 `antou.opening.seen` 只记录开场动画是否播放过。
+- 状态库不加密，也没有自动删除。成功会话里会有角色要求、任务正文、模型可见的消息和读取过的资料片段。分享或备份时要排除整个 `workspace/`。
+- 工具集是上面那五个。代码路径里没有 PDF、OCR、邮件、定时任务、多用户登录，也没有任意命令或脚本执行。
+- 单元测试使用本机假上游。仓库不能证明某个云端模型已经开通、支持工具调用，或和 Microsoft Excel / Word 的版式一致。
+- token 数字是估算，不是该模型官方 tokenizer 的计数。
+
+These are the limits of the code in this tree.
+
+- The listen address is `127.0.0.1`. Write routes also check `Host`, `X-Office-Token`, and `Origin`. `GET /download` checks `Host` only, and it can only read files under the workspace `inputs/` and `outputs/` directories.
+- A remote base URL has to be HTTPS. HTTP is limited to `127.0.0.1`, `localhost`, and `::1`. The URL cannot carry a username, password, query, or fragment. Redirects are not followed, and the key is not sent to another host.
+- An environment-variable key is sent only to that preset's official scheme, host, and port. The custom preset does not read an environment key. After the base URL changes, type the key for that URL in the page.
+- Browser `localStorage` key `antou.preferences.v3` stores the provider, base URL, model name, thinking flag, output limit, context budget, and streaming flag. It does not store the API key, role text, or conversation. `sessionStorage` key `antou.opening.seen` records whether the opening animation has played.
+- The SQLite file is not encrypted and rows are not deleted automatically. A successful session stores the role text, the task, the model-visible messages, and excerpts that were read. Exclude the whole `workspace/` directory from backups and shares.
+- The tool set is the five names above. This tree has no PDF, OCR, email, scheduler, multi-user login, or arbitrary command execution.
+- The unit tests use a local fake upstream. They do not show that a cloud model is enabled, that it supports tools, or that a file matches Microsoft Excel or Word layout.
+- Token figures are an estimate, not that model's tokenizer.
+
+## 安装与运行 / Install and run
+
+需要 Python 3.9 或更新版本。第三方依赖只有 `openpyxl` 和 `python-docx`（见 `requirements.txt`）。页面、GSAP 和样式都在仓库里，不需要前端构建，也不从 CDN 加载脚本。
+
+Python 3.9 or newer. The Python dependencies are `openpyxl` and `python-docx`, listed in `requirements.txt`. The page, GSAP, and CSS ship in the repository. There is no frontend build and no script CDN.
+
+Windows：在项目目录双击 `start.cmd`。脚本会在需要时创建 `.venv` 并安装依赖，然后运行 `app.py`。
+
+macOS / Linux：
 
 ```sh
-git clone https://github.com/jjh-python667/antou-office-agent.git
-cd antou-office-agent
-python -m pip install -r requirements.txt
-python app.py
+chmod +x start.sh   # once, if the executable bit is missing
+./start.sh
 ```
 
-![真实本地费用汇总演示](docs/screenshots/workbench.png)
+Debian / Ubuntu 上创建 `.venv` 需要系统包 `python3-venv`。没有这个包时，用下面的手动步骤，直接用能安装依赖的 Python 运行 `python app.py`。
 
-截图是本机界面与固定演示流程，不代表真实云端模型联调通过。当前提供本地运行源码，没有公网 Agent 后端。
+On Debian and Ubuntu, creating `.venv` needs the `python3-venv` package. Without it, use the manual steps below and a Python that can install the requirements.
 
-
-当前版本 **v3.2**，开发基线为 `office-agent-v3.1-source.zip`。原包 SHA256：`29ea6654d8566fde779477f96ff460399bbdfe7f1a1f6c15430bf0f55883fa8f`。v3.1 的全部修复保留；没有基于旧 v3 回退修改。公开仓库只包含源码、文档与演示截图，不包含工作资料、数据库、日志或密钥。
-
-## v3.2 的 P1 更新
-
-1. **正文流式输出**：角色对话和 Agent 的最终正文可逐步显示，工具调用参数在完整拼接后才执行。生成结束后统一排版；停止或异常时把已显示内容标为未完成。设置中可关闭流式，兼容只返回 JSON 的网关也会回退显示完整回复。
-2. **服务商参数适配**：DeepSeek 使用 `thinking.type`，通义千问使用顶层 `enable_thinking`；OpenAI 使用 `max_completion_tokens`，其余兼容接口使用 `max_tokens`。只对支持的两个预设显示思考开关，不向其他服务商注入这些专有字段。默认关闭思考；不显示 reasoning_content 为正文，工具历史中按协议保留。某些仅思考或特殊模型仍需按真实服务商要求设置并验证。
-3. **上下文预算**：可设置最大输出与上下文预算；默认分别为 6000 / 32000。按 UTF-8 字节做保守 token 上界估算，包含工具 schema 和输出预留，不是服务商精确计数。超预算时只移除最早的完整用户轮次，不拆开 assistant/tool 消息。会显示省略提示；当前任务或工具链本身过大时，在调用模型前报错，要求减少资料或提高到模型实际支持的预算。
-4. **本机会话保存**：成功轮次的上下文、正文和必要连接参数原子保存到 `workspace/.antou/state.sqlite3`。刷新或重启后可在历史中手动恢复；未知或不可恢复的会话继续沿用 v3.1 的失效提示，不自动调用模型。取消、失败和不完整流不会提交为成功会话。API Key、请求鉴权头不写入状态库。
-5. **任务历史**：工作台“历史”可查看成功、停止、报错、中断和失效任务，下载成品、恢复成功会话，或把原任务放回输入框由用户确认后发送。停止任务的部分正文单独标识；服务重启时，上次未结束的任务标为中断。
-
-恢复会话使用原服务商、地址和模型配置；Key 需要在页面重新填写或符合 v3.1 的官方地址环境变量规则。思考内容不展示，但模型协议上下文可能包含它并保存在本机。对话、角色要求、读取的资料片段和任务正文会存入本机状态库，因此备份与分享源码时必须排除整个 workspace。状态库当前不加密、不自动删除记录；“新建会话”只切换当前会话，不删除磁盘历史。未发送草稿仍只保留在当前页面，刷新后不恢复。
-
-可自行修改的本地办公助手：角色对话 + 连续工具调用 Agent。当前版本在 7 种模型 API 与 GSAP 创意机构风格前端上，进一步优化了日常办公交互。不依赖 Cherry Studio，不需要前端构建步骤。
-
-## 本次体验优化
-
-- **专注模式**：工作台右上角进入，快捷键 Ctrl/Cmd + K；Esc 退出，手机上一屏内完成主要操作。浏览首页时提供回到工作台的快捷入口。
-- **开场不挡路**：保留完整 opening，可点击跳过或按 Esc；同一标签页会话内不反复播放，右上角可手动重播。
-- **保留上下文**：角色助手与执行 Agent 分别保留当前页面内的对话、草稿和执行记录；切换不会清空。新建会话后可通过提示条撤销，开始编辑或新任务后撤销失效。
-- **设置可放弃**：只有点击“应用设置”才生效；关闭设置会放弃本次修改。缺少模型配置时先引导设置，任务草稿保留，不会自动付费重发。
-- **记住非敏感偏好**：服务商、Base URL 与模型名保存在浏览器，可在设置中清除。API Key、角色要求、任务和聊天内容不写入浏览器持久存储；密钥刷新后需重新填写。Ctrl/Cmd + 逗号打开模型设置。
-- **明确选资料**：上传后自动选入本次任务，也可在文件列表勾选或在输入框上方取消选择；每次最多 10 份。资料路径随任务发送给 Agent，请求它优先处理。该选择是任务上下文，不是工具权限隔离。
-- **文件更好找**：按最近修改排序、显示数量和时间、支持名称搜索；批量上传时无效文件不会阻止其他文件上传。
-- **执行有反馈**：显示任务阶段、等待耗时、可理解的工具名称和完成状态。失败后提供手动重试和模型设置入口；不会自动重试付费请求。
-- **结果更易用**：基础 Markdown 安全排版、正文复制、成品下载链接和结果定位。模型返回的 HTML 按文本呈现，不执行。
-- **工作台里也能试用**：欢迎区可直接运行无需 Key 的本地演示，不必回到上方展示页。
-
-## v3.1 修复
-
-- **可以停止任务**：任务运行时输入框旁出现“停止任务 ■”。停止、刷新或关闭页面后，模型等待可快速放弃并释放执行锁；正在执行的单个工具需等它结束，再停止后续步骤。已生成文件保留，被停止的整轮不提交为成功会话。已经发出的那次模型请求仍可能计费。
-- **会话失效会明确提示**：无法从内存或本机状态库恢复时，旧会话不会被悄悄替换；页面提示“上下文已失效”，把任务放回输入框，由你确认后在新会话中发送。v3.2 中成功会话可以从磁盘恢复，内存淘汰不再等于永久失效。
-- **环境变量 Key 只发往官方地址**：修改了 Base URL（含自定义接口）时，必须在设置中填写 Key，不会回退使用环境变量。
-- **Excel 更可用**：明细页金额写为数值，金额列显示两位小数；超过 Excel 15 位有效数字的金额按文本保存精确值并注明；未计算的公式标记为“公式未计算”。
-- **报错更清楚**：显示服务商返回的错误原文（去除密钥、截断到 300 字）；表格读取按字符上限分页。
-
-成功会话可从本机任务历史恢复；未发送草稿只保留在当前页面内。任务开始前选定资料，执行中保留当前任务配置。重试前请检查已生成文件，避免重复生成不必要的结果。
-
-## 启动
-
-Windows 安装 Python 3.9 或更新版本，将整个项目解压到可写目录，双击 `start.cmd`。首次启动会创建 `.venv` 并安装两个 Python 依赖，需要联网；浏览器自动打开本地页面，关闭终端停止服务。
-
-默认端口 `8765` 不可用时会自动选择空闲端口，以实际打开的地址为准。也可用 `OFFICE_PORT` 环境变量指定端口。数据默认保存在 `workspace/inputs` 和 `workspace/outputs`，可用 `OFFICE_WORKSPACE` 指定工作目录。
+`start.cmd` 和 `start.sh` 都会把额外参数传给 `app.py`。加上 `--no-browser` 时不自动打开浏览器。
 
 手动启动：
 
@@ -77,111 +85,155 @@ python -m pip install -r requirements.txt
 python app.py
 ```
 
-## 新前端与动效
+默认端口是 `8765`。这个端口被占用、且没有设置 `OFFICE_PORT` 时，进程会改用系统分配的空闲端口，以终端里打印的地址为准。`OFFICE_PORT` 指定的端口打不开时，进程直接退出。工作目录默认是 `workspace/`，可以用 `OFFICE_WORKSPACE` 改到别的可写目录。
 
-- 首屏：字标分字遮罩进场、黑色双幕揭开、标题压缩和位移后归位，约 4.3 秒完成；首次访问完整播放，右上角可重播，跳过按钮或 Escape 可立即结束。
-- 滚动：模块英文大标题先大幅移入，卡片随后错峰展开；插画遮罩揭开，图片轻微视差；无弹跳缓动。
-- 动画以 transform、clip-path 为主，滚动监听统一使用 ScrollTrigger；不使用滚动劫持、持续粒子或视频背景。SVG 插画为本项目原创。
-- GSAP 与 ScrollTrigger 3.15.1 随源码本地打包，无外部 CDN 依赖，见 `assets/THIRD-PARTY.txt`。
-- 适配 `prefers-reduced-motion`，关闭开场和滚动位移动效。动画库失效时显示完整页面，办公功能独立运行。
-- 下方工作台保留上传、对话、工具记录和文件下载；支持手机屏幕与拖入文件。
+数据在 `inputs/` 和 `outputs/` 下，位于工作目录内部。关掉启动这个进程的终端，服务就停。
 
-## 7 种模型接口
+The default port is `8765`. If that port is busy and `OFFICE_PORT` is unset, the process asks the OS for a free port and prints the URL. If `OFFICE_PORT` is set and that port cannot be opened, the process exits. The default workspace is `workspace/`. `OFFICE_WORKSPACE` points it somewhere else writable. Inputs and outputs live inside that directory. Stopping the terminal stops the server.
 
-在页面“连接模型”模块或工作台顶部点击模型按钮，打开设置。每家服务商有独立的密钥、模型与地址配置。已应用的地址与模型名可以记住，密钥仅在页面内存保存，不写入 localStorage、sessionStorage 或日志。sessionStorage 仅记录开场动画是否已播放。
+### 模型预设 / Provider presets
 
-1. **DeepSeek**：默认 `https://api.deepseek.com`，保留默认模型 `deepseek-flash`；环境变量 `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL`。
-2. **OpenAI**：默认 `https://api.openai.com/v1`；环境变量 `OPENAI_API_KEY` / `OPENAI_MODEL`。
-3. **通义千问 / 百炼**：默认北京地域共享地址 `https://dashscope.aliyuncs.com/compatible-mode/v1`；支持修改为对应地域或工作空间地址。Key 与地域需匹配；环境变量 `DASHSCOPE_API_KEY` / `QWEN_MODEL`。
-4. **Kimi**：默认 `https://api.moonshot.cn/v1`；环境变量 `MOONSHOT_API_KEY` / `KIMI_MODEL`。
-5. **硅基流动**：默认 `https://api.siliconflow.cn/v1`；环境变量 `SILICONFLOW_API_KEY` / `SILICONFLOW_MODEL`。
-6. **Ollama 本地**：默认 `http://127.0.0.1:11434/v1`，Key 可留空。需先自行安装并启动 Ollama、下载模型；环境变量 `OLLAMA_MODEL`。
-7. **自定义兼容接口**：填写 Chat Completions 兼容的 Base URL、模型和可选 Key；Key 需在页面填写（不读取环境变量），可用 `CUSTOM_MODEL` 预设模型名。
+环境变量里的 Key 只在 Base URL 仍是该行官方源站时使用。模型名可以用对应的 `*_MODEL` 环境变量预填；除 DeepSeek 的 `deepseek-flash` 外，预设默认模型名为空，需要在页面读取列表或手写。
 
-环境变量中的 Key 只发送到该服务商预设的官方主机（协议、主机、端口一致）；修改接口地址后需在页面填写对应 Key。
+An environment key is used only while the base URL is still that row's official origin. A `*_MODEL` variable can prefill the model name. Aside from DeepSeek's `deepseek-flash`, the preset default model is empty until you load the list or type one.
 
-除 DeepSeek 保留现有默认值外，其他服务商模型名由“读取列表”或手动填写确定，不把静态模型推荐当作当前可用列表。列表接口可能包含非对话模型，需选择支持对话的模型；执行 Agent 还需要模型支持 `tools` 函数调用。
+| 预设 | 默认 Base URL | Key 环境变量 | 模型名环境变量 |
+| --- | --- | --- | --- |
+| DeepSeek | `https://api.deepseek.com` | `DEEPSEEK_API_KEY` | `DEEPSEEK_MODEL` |
+| OpenAI | `https://api.openai.com/v1` | `OPENAI_API_KEY` | `OPENAI_MODEL` |
+| 通义千问 | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `DASHSCOPE_API_KEY` | `QWEN_MODEL` |
+| Kimi | `https://api.moonshot.cn/v1` | `MOONSHOT_API_KEY` | `KIMI_MODEL` |
+| 硅基流动 | `https://api.siliconflow.cn/v1` | `SILICONFLOW_API_KEY` | `SILICONFLOW_MODEL` |
+| Ollama | `http://127.0.0.1:11434/v1` | `OLLAMA_API_KEY`（可空） | `OLLAMA_MODEL` |
+| 自定义 | 由页面填写 | 只使用页面里填写的 Key | `CUSTOM_MODEL` |
 
-“读取列表”验证模型列表接口；“测试对话连接”会真实调用所选模型，可能消耗少量额度。模型列表成功不代表全部模型支持 Agent。应用设置后才切换当前服务商；更换服务商、地址或模型会开始独立会话，避免混用不兼容历史。
+Ollama 需要你自己安装、启动，并拉取模型。自定义接口要兼容 Chat Completions。「读取列表」和「测试对话连接」都会访问你填写的地址；测试对话可能产生费用。列表能连通，不表示每个模型都支持工具调用。
 
-本项目调用 `/chat/completions`，不是 Responses、Anthropic 原生或 Gemini 原生协议客户端。需要这些服务时，应接入确实提供兼容协议的服务地址。远程接口必须用 HTTPS；HTTP 仅允许本机地址。密钥不跟随 HTTP 重定向转发。
+Ollama has to be installed, running, and holding a model you choose. A custom endpoint needs to speak Chat Completions. "Load models" and "Test chat" both contact the URL you entered. A chat test can spend credit. A model list does not mean every id supports tools.
 
-## 两种模式与办公工具
+接口说明：
 
-**角色助手**：可自定义角色要求，用于写作、问答、表格设计。保留当前会话上下文，不启用文件工具。上传后需切换执行 Agent 才能读取资料。
+- DeepSeek: <https://api-docs.deepseek.com/guides/tool_calls/>
+- OpenAI: <https://developers.openai.com/api/reference/chat-completions/overview>
+- 百炼: <https://help.aliyun.com/en/model-studio/base-url>
+- Kimi: <https://platform.kimi.com/docs/api/chat>
+- 硅基流动: <https://api-docs.siliconflow.cn/docs/userguide/quickstart>
+- Ollama: <https://docs.ollama.com/api/openai-compatibility>
 
-**执行 Agent**：模型返回工具调用 → 程序校验参数并执行 → 将真实结果交回模型 → 继续选择工具或交付。每次任务最多 10 轮，每轮最多 8 次工具调用。工具错误会反馈给模型；不会将失败结果保存为已完成会话。
+### 页面操作 / Using the page
 
-- `list_files`：列出输入文件和生成结果。
-- `read_file`：读取 TXT、MD、CSV、XLSX、DOCX，支持分页。
-- `summarize_table`：完整读取表格，用 Decimal 分组计算金额，检查异常并生成 Excel。
-- `create_spreadsheet`：生成一个或多个工作表，保存后重新读取校验。
-- `write_document`：生成 Word 报告或纪要，保存后重读检查结构。
+- 开场动画约 4.3 秒，可点「跳过」或按 Esc。同一标签页里用 `sessionStorage` 记住已播放，右上角可以重播。系统开启「减少动态效果」时，开场和滚动位移动效关闭。GSAP 加载失败时，开场层会去掉，办公功能仍由 `ui.js` 运行。
+- 专注模式在工作台右上角，快捷键是 Ctrl/Cmd + K。Esc 在设置窗关闭时退出专注模式；若手机文件面板开着，Esc 先关面板。
+- 设置要点「应用设置」才生效。关掉设置窗会丢掉这次没应用的修改。Ctrl/Cmd + 逗号打开设置。
+- 上传后的文件会自动选入本次任务，最多 10 份。文件列表按修改时间从新到旧排列，可以按名称搜索。角色助手收到附件时，页面会改去执行 Agent，不自动发出请求。
+- 新建会话可以在开始编辑或发出新任务前撤销。未发送的草稿只留在当前页面。
 
-表格首行需为不重复、非空的字段名。金额需为普通数字，不自动猜测逗号和货币符号的含义。缺失或非数字金额不计入，重复行保留并计入，缺少分组字段的有效金额归入空分组，异常在原始数据页标记。空行保留，以保持真实源行号。不同币种需预先分开。
+The opening animation runs about 4.3 seconds. Skip it with the button or Esc. `sessionStorage` remembers it for the tab, and the corner button can replay it. `prefers-reduced-motion` disables the opening and scroll motion. If GSAP fails to load, the opening layer is removed and `ui.js` still runs the office UI.
 
-XLSX 公式读取已有缓存值；本项目不提供公式计算引擎。生成表格中的文本按文本保存，不执行输入中包含的公式。最多 50000 行、200 列，单个上传文件 20MB。Word 使用 A4 与中文字体，校验包括结构重读，未实现页面渲染校验。
+Focus mode is the control at the top right of the workbench, or Ctrl/Cmd + K. Esc leaves focus mode while the settings dialog is closed. If the narrow-screen file panel is open, Esc closes that panel first.
 
-## 先试运行
+Settings apply only from "应用设置". Closing the dialog drops unapplied edits. Ctrl/Cmd + comma opens settings.
 
-点击“运行费用汇总演示”。这是明确标记的固定本地流程，不调用外部模型，不消耗 API 额度。会读取演示数据、按部门和月份汇总、生成 Excel 与 Word，合计金额为 780，保留并标记重复与缺失记录。
+Uploads are selected for the current task, up to 10 files. The file list is newest first and can be filtered by name. Choosing attachments in role mode switches the page to the agent and does not send the request by itself.
 
-之后配置自己的接口，上传脱敏资料，向执行 Agent 发送：
+A new chat can be undone until you edit or start another task. An unsent draft stays in the current page only.
 
-> 请检查我上传的费用表字段，按部门、月份汇总金额，生成 Excel 和 Word 说明，列出异常、处理口径，并核对总额。
+## 测试 / Tests
 
-在工作台右侧核对真实执行记录、下载文件。原始文件会保留，同名输出会自动生成新文件名。
+```sh
+python -m pip install -r requirements.txt
+python -m unittest -v
+```
 
-## 源码与 HTTP API
+当前树里有 47 个 `test_*` 方法：`test_app.py`、`test_providers.py`、`test_ux.py`、`test_v31.py` 共 30 个，`test_v32.py` 17 个。它们覆盖本地文件工具、本机假上游上的对话与工具协议、会话和 Key 范围、Excel 数值与公式标记、流式输出、上下文预算、任务历史，以及一次真正重启 `app.py` 进程后的会话恢复。
 
-- `app.py`：本地 HTTP 服务、会话和 Agent 循环。
-- `providers.py`：7 种服务商配置、模型发现、连接测试、对话适配。
-- `office_tools.py`：文件范围限制、统计和 Excel / Word 生成。
-- `context_budget.py`：保守上下文估算、按完整用户轮次裁剪。
-- `local_state.py`：本机 SQLite 会话与任务历史，成功轮次原子提交。
-- `index.html`：页面结构。
-- `assets/styles.css` / `assets/ux.css`：响应式视觉设计与专注模式、状态、资料选择等交互样式。
-- `assets/ui.js`：模型设置、上传、对话、文件和工具记录。
-- `assets/motion.js`：开场时间线、ScrollTrigger、减少动态效果和失效回退。
-- `test_app.py` / `test_providers.py` / `test_ux.py`：本地工具、模型协议及资料选择、文件元数据测试。
-- `test_v31.py`：任务取消与断线释放锁、会话失效、Key 作用域、Excel 数值与精度、公式未计算、上游错误原文、读取字符上限。
-- `test_v32.py`：流式输出与工具参数拼接、上下文预算、会话持久化、任务历史、流式取消、真正的应用进程重启与密钥脱敏。
-- `assets/p1.css`：高级设置与任务历史界面；原有主视觉样式、动效脚本和插画未改。
+GitHub Actions 工作流 `.github/workflows/tests.yml` 在 `ubuntu-latest` 和 `windows-latest` 上使用 Python 3.11 运行同一条 `python -m unittest -v`。上面的徽章指向这个工作流。
 
-只监听本机 `127.0.0.1`。写接口要求页面令牌 `X-Office-Token` 和合法来源；不是可直接公开部署的多用户服务。
+This tree contains 47 `test_*` methods: 30 across `test_app.py`, `test_providers.py`, `test_ux.py`, and `test_v31.py`, plus 17 in `test_v32.py`. They cover the local file tools, chat and tool protocol against a local fake upstream, sessions and key scope, Excel numbers and formula labels, streaming, the context budget, task history, and session restore after a real `app.py` process restart.
 
-- `GET /api/health`：服务状态。
-- `GET /api/providers`：服务商公开配置，只有密钥是否存在的布尔值。
-- `GET /api/config`：基础配置，兼容第一版。
-- `GET /api/files`：工作文件列表。
-- `GET /api/history?limit=50&offset=0`：本机任务列表，支持分页。
-- `GET /api/history/{task_id}`：任务详情、结果和部分正文。
-- `GET /api/sessions/{session_id}`：成功会话正文与不含密钥的连接设置，供恢复使用。
-- `POST /api/models`：读取所选服务商模型。
-- `POST /api/test`：测试所选模型对话。
-- `POST /api/chat`：角色对话或 Agent 执行，NDJSON 事件流。首个事件为 `task`（含 `task_id`）；旧会话不存在时返回 `session_expired` 且不调用模型；停止后返回 `cancelled`。
-- `POST /api/cancel`：参数 `task_id`，停止正在运行的任务。
-- `POST /api/upload`：上传文件。
-- `POST /api/demo`：本地演示，NDJSON 事件流。
+The workflow `.github/workflows/tests.yml` runs that same command on Python 3.11 for `ubuntu-latest` and `windows-latest`. The badge points at that workflow.
+
+## 项目结构 / Layout
+
+```
+app.py                 本机 HTTP 服务、会话和 Agent 循环
+providers.py           七个预设、请求、流式解析、错误文本
+office_tools.py        路径限制、统计、Excel / Word
+context_budget.py      上下文估算和按整轮删减
+local_state.py         SQLite 会话与任务历史
+index.html             页面
+assets/ui.js           设置、上传、对话、历史
+assets/motion.js       开场和滚动动效
+assets/styles.css      主视觉
+assets/ux.css          专注模式和交互状态
+assets/p1.css          历史和高级设置
+assets/gsap.min.js     GSAP 3.15.1（第三方）
+assets/ScrollTrigger.min.js
+assets/*.svg           本项目插画
+test_*.py              标准库 unittest
+requirements.txt
+start.cmd / start.sh
+docs/PROJECT.md
+docs/screenshots/      从本机页面截取的界面
+CHANGES-v3.1.md        v3.1 当时的修改记录
+CHANGES-v3.2.md        v3.2 当时的修改记录
+BASELINE-v3.1.json     记录中的 v3.1 源码包 SHA-256 与文件哈希
+CHANGELOG.md           本仓库此后的变更
+LICENSE                项目代码的 MIT 许可
+.github/workflows/tests.yml
+```
+
+v3.1 / v3.2 的过程说明在 `CHANGES-v3.1.md` 和 `CHANGES-v3.2.md`。
+
+The v3.1 and v3.2 notes are in `CHANGES-v3.1.md` and `CHANGES-v3.2.md`.
+
+运行产生的 `workspace/`、`.venv/`、`__pycache__/`、日志、SQLite 和 `.env` 已写在 `.gitignore` 里。
+
+Generated `workspace/`, `.venv/`, `__pycache__/`, logs, SQLite files, and `.env` are listed in `.gitignore`.
+
+## 界面 / Interface
+
+下面三张图是 2026-11-11 在本仓库启动的页面上截的：桌面宽度、系统「减少动态效果」打开、先跑内置演示，再打开本机历史。图中的 780 来自 `demo()` 那份固定 CSV，不是云端模型的输出。
+
+These three images were captured on 2026-11-11 from the page served by this repository: desktop width, reduced motion, after the built-in demo, then the local history dialog. The 780 in the picture is the fixed CSV from `demo()`, not a cloud model.
+
+![案头首页 / Home](docs/screenshots/home.png)
+
+![本地演示后的工作台 / Workbench after the local demo](docs/screenshots/workbench.png)
+
+![本机任务历史 / Local task history](docs/screenshots/history.png)
+
+## 本机 HTTP / Local HTTP
+
+写请求是 JSON，并带 `X-Office-Token`（页面源码里的 `__TOKEN__` 会在响应时换成进程启动时生成的令牌）。不要把 Key 放进 URL。
+
+- `GET /api/health`：`status`、`version`（当前为 `3.2`）、`baseline`、预设数量和工具数量。
+- `GET /api/providers`：公开预设。只有是否存在环境变量 Key 的布尔值，没有密钥本身。
+- `GET /api/config`：兼容早期调用的 DeepSeek 默认模型和同一份公开预设。
+- `GET /api/files`：工作文件，最多 300 个，按修改时间从新到旧。
+- `GET /api/history?limit=50&offset=0`：任务列表。`limit` 会收进 1–100。
+- `GET /api/history/{task_id}`、`GET /api/sessions/{session_id}`：任务详情，或成功会话的正文和不含密钥的连接设置。
+- `POST /api/models`、`POST /api/test`：读取模型列表，或发一条只要求回复 OK 的对话。
+- `POST /api/chat`：NDJSON。常见事件有 `task`、`session`、`session_expired`、`context_budget`、`answer_delta`、`reply_end`、`answer`、`tool_start`、`tool_end`、`cancelled`、`error`、`done`。页面只在 `done` 之后采用新的 `session_id`。
+- `POST /api/cancel`：`{"task_id": "..."}`。
+- `POST /api/upload`：`{"name","data"}`，`data` 是文件的 base64。扩展名必须是 txt、md、csv、xlsx、docx。
+- `POST /api/demo`：本地演示的 NDJSON。
 - `GET /download?path=outputs/...`：下载工作文件。
 
-模型接口参数为 `provider`、`base_url`、`api_key`、`model`，可选 `thinking`（布尔）、`max_output_tokens`（256–16000）与 `context_window`（4096–1000000，且需大于输出预留）。对话另含 `text`、`mode`、`session_id`、`stream`（布尔，UI 默认 true）、可选 `role_prompt` 与 `attachments` 文件路径数组（最多 10 项，仅 Agent 模式）。文件路径会先做范围与存在性校验，再交给模型。不要将 Key 放在 URL 中。
+聊天体里还有 `provider`、`base_url`、`api_key`、`model`，以及可选的 `thinking`、`max_output_tokens`（256–16000）、`context_window`（4096–1000000，并且要大于输出上限加 512）、`text`（最多 20000 字）、`mode`（`role` 或 `agent`）、`session_id`、`stream`、`role_prompt`（最多取 6000 字）和 `attachments`（最多 10 个路径，仅 Agent）。POST 正文超过 29MB 会拒绝。
 
-新增事件 `answer_delta`（正文增量，含 reply_id）、`reply_end`（工具执行前的步骤说明结束）与 `context_budget`（估算和省略轮数）。`answer` 为完整正文，`done` 才表示整轮成功。客户端仍只在 done 后采用新 session_id。思考片段不通过 answer_delta 发送。
+Write requests are JSON and include `X-Office-Token`. The page template's `__TOKEN__` is replaced with a token created when the process starts. Keep keys out of URLs.
 
-## 验证与边界
+`max_output_tokens` is an integer from 256 to 16000. `context_window` is an integer from 4096 to 1000000 and must exceed the output limit by more than 512. `text` is at most 20,000 characters. `role_prompt` is stored up to 6,000 characters. `attachments` allows at most 10 paths, and only in agent mode. A POST body above 29MB is rejected.
 
-安装依赖后运行 `python -m unittest -v`。47 项测试（v3.1 原有 30 项保持原样 + v3.2 新增 17 项）覆盖文件工具、真实本地 HTTP 上游协议、跨模型会话隔离、流式与非流式工具调用、上下文预算、任务历史、密钥隔离、重定向处理、Excel 精度及本机状态恢复，不调用收费模型。已在 Windows / Python 3.9 上运行，包括真正终止并重启应用进程的续接测试。原有断线测试偶尔出现已关闭 socket 的 ResourceWarning，不影响断言。
+## 许可 / License
 
-本次还用 Edge / Playwright 检查了开场跳过与重播、设置放弃与应用、配置前引导、两种模式的历史与草稿保留、安全文本排版、复制、耗时反馈、失败重试、真实本地演示、混合格式上传、任务资料选择、文件搜索、新会话撤销、桌面与手机专注布局，以及记住配置时不保存密钥。云端服务商未使用真实账户 Key 联调，兼容程度与费用以实际模型和服务商为准。
+本仓库的项目代码采用 [MIT License](LICENSE)，版权人为 工匠（jjh-python667），2026。
 
-分析资料时，任务与读取的文件内容可能发送到所选服务商。成功会话、任务历史、上传和输出文件都保存在本机磁盘；API Key 不保存。尚无 PDF/OCR、邮件发送、定时任务、任意脚本执行、多用户登录或公网部署能力。单个工具执行过程中仍不能强制打断；取消前已发出的模型请求仍可能计费。没有进行真实云端 Key 联调，也没有用 Microsoft Excel / Word 应用做版式实测。
+Project code in this repository is under the [MIT License](LICENSE), copyright 工匠 (jjh-python667), 2026.
 
-接口依据：
+## 第三方文件 / Third-party files
 
-- DeepSeek：https://api-docs.deepseek.com/guides/tool_calls/
-- OpenAI：https://developers.openai.com/api/reference/chat-completions/overview
-- 百炼：https://help.aliyun.com/en/model-studio/base-url
-- Kimi：https://platform.kimi.com/docs/api/chat
-- 硅基流动：https://api-docs.siliconflow.cn/docs/userguide/quickstart
-- Ollama：https://docs.ollama.com/api/openai-compatibility
+`assets/gsap.min.js` 与 `assets/ScrollTrigger.min.js` 是 GSAP 3.15.1，随这个仓库附带，适用 GreenSock Standard License。版权声明保留在文件头，说明见 [assets/THIRD-PARTY.txt](assets/THIRD-PARTY.txt)。SVG 插画是本项目的文件。
+
+`assets/gsap.min.js` and `assets/ScrollTrigger.min.js` are GSAP 3.15.1 and ship with this repository under GreenSock's Standard License. The file headers keep the upstream notice. See [assets/THIRD-PARTY.txt](assets/THIRD-PARTY.txt). The SVG illustrations are files from this project.

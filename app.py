@@ -8,6 +8,7 @@ import secrets
 import queue
 import select
 import socket
+import sys
 import threading
 import time
 import webbrowser
@@ -467,7 +468,7 @@ def main():
         server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     print("Office Agent: http://127.0.0.1:%d" % server.server_port)
     print("Workspace: " + str(OFFICE.root))
-    if "--no-browser" not in __import__("sys").argv:
+    if "--no-browser" not in sys.argv:
         webbrowser.open("http://127.0.0.1:%d" % server.server_port)
     try:
         server.serve_forever()
